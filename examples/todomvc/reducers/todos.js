@@ -1,3 +1,5 @@
+import { Effects, loop } from 'redux-loop';
+
 import { ADD_TODO, DELETE_TODO, EDIT_TODO, MARK_TODO, MARK_ALL, CLEAR_MARKED } from '../constants/ActionTypes';
 
 const initialState = [{
@@ -6,7 +8,9 @@ const initialState = [{
   id: 0
 }];
 
-export default function todos(state = initialState, action) {
+export default function todos(deps = {}, action) {
+  const state = deps.todos || initialState;
+console.log('REDUCER', state, action.type);
   switch (action.type) {
   case ADD_TODO:
     return [{
@@ -28,10 +32,16 @@ export default function todos(state = initialState, action) {
     );
 
   case MARK_TODO:
-    return state.map(todo =>
-      todo.id === action.id ?
-        { ...todo, marked: !todo.marked } :
-        todo
+    return loop(
+      state.map(todo =>
+        todo.id === action.id ?
+          { ...todo, marked: !todo.marked } :
+          todo
+      ),
+      Effects.call((...args) => {
+        console.log('side-effect MARK_TODO', ...args);
+        return { type: '@@NOOP' };
+      })
     );
 
   case MARK_ALL:

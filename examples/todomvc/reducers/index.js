@@ -1,4 +1,4 @@
-import { combineReducers } from 'redux';
+import {combineReducers} from 'redux-loop';
 import todos from './todos';
 
 const rootReducer = combineReducers({

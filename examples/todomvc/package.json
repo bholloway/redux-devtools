@@ -29,11 +29,13 @@
   "homepage": "https://github.com/gaearon/redux-devtools#readme",
   "dependencies": {
     "classnames": "^2.1.2",
+    "immutable-js": "^0.3.1-6",
     "react": "^15.0.1",
     "react-dom": "^15.0.1",
     "react-hot-loader": "^3.0.0-beta.1",
     "react-redux": "^4.1.0",
-    "redux": "^3.1.1"
+    "redux": "^3.1.1",
+    "redux-loop": "^2.2.2"
   },
   "devDependencies": {
     "babel-cli": "^6.3.17",
