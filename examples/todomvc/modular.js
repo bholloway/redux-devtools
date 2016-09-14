@@ -1,54 +1,67 @@
+import React from 'react';
 import {loop, isLoop, getEffect, getModel} from 'redux-loop/lib/loop';
 import {batch, none} from 'redux-loop/lib/effects';
+import storeShape from 'react-redux/lib/utils/storeShape';
 
-const imLoopDecoder = state =>
-  state.toObject();
-
-const imLoopEncoder = (state, value) => {
-  const optimizeBatch = effects => {
-    switch (effects.length) {
-      case 0:
-        return none();
-      case 1:
-        return effects[0];
-      default:
-        return batch(effects);
-    }
-  };
-
-  const plainPrevState = state.toObject();
-  const effects = Object.keys(plainPrevState)
-    .map(key => plainPrevState[key])
-    .reduce((reduced, prev) => reduced.concat(isLoop(prev) ? getEffect(prev) : []), []);
-
-  return loop(
-    state.merge(value),
-    optimizeBatch(effects)
-  );
+export const optimizeBatch = effects => {
+  switch (effects.length) {
+    case 0:
+      return none();
+    case 1:
+      return effects[0];
+    default:
+      return batch(effects);
+  }
 };
 
-const loopDecoder = state => state;
+export const imLoopCodec = {
+  decode: state => state,
+  encode: (state, value) => {
+    const effects = Object.keys(value)
+      .reduce((reduced, k) => {
+        const v = value[k];
+        return reduced.concat(isLoop(v) ? getEffect(v) : [])
+      }, []);
 
-const loopEncoder = (state, value) => {
-  const optimizeBatch = effects => {
-    switch (effects.length) {
-      case 0:
-        return none();
-      case 1:
-        return effects[0];
-      default:
-        return batch(effects);
-    }
-  };
+    const plain = Object.keys(value)
+      .reduce((reduced, k) => {
+        const v = value[k];
+        return {
+          ...reduced,
+          [k]: isLoop(v) ? getModel(v) : v
+        };
+      }, {});
 
-  const effects = Object.keys(state)
-    .map(key => state[key])
-    .reduce((reduced, prev) => reduced.concat(isLoop(prev) ? getEffect(prev) : []), []);
+    return loop(
+      state.merge(plain),
+      optimizeBatch(effects)
+    );
+  }
+};
 
-  return loop(
-    value,
-    optimizeBatch(effects)
-  );
+export const loopCodec = {
+  decode: state => state,
+  encode: (state, value) => {
+    const effects = Object.keys(value)
+      .reduce((reduced, k) => {
+        const v = value[k];
+        return reduced.concat(isLoop(v) ? getEffect(v) : [])
+      }, []);
+
+    const plain = Object.keys(value)
+      .reduce((reduced, k) => {
+        const v = value[k];
+        return {
+          ...reduced,
+          [k]: isLoop(v) ? getModel(v) : v
+        };
+      }, {});
+
+    return loop(
+      plain,
+      optimizeBatch(effects)
+    );
+  }
 };
 
 // --------------------
@@ -98,9 +111,9 @@ const invokeModuleFactory = fn => key => {
     throw new Error(`Invalid Module: Factory for module ${key} must yield 
       {provides:String|Symbol}`);
   }
-  if (!isArrayOfStringOrSymbol(result.requires)) {
+  if (!isArrayOfStringOrSymbol(result.depends)) {
     throw new Error(`Invalid Module: Factory for module ${key} must yield 
-      {requires:Array.<String|Symbol>}`);
+      {depends:Array.<String|Symbol>}`);
   }
   if (typeof result.reducer !== 'function') {
     throw new Error(`Invalid Module: Factory for module ${key} must yield 
@@ -128,7 +141,7 @@ const sortModules = modules => {
     pendingProvides = remainingProvides
       .filter(provide => {
         const module = modulesByProvides[provide];
-        return module.requires.every(notInArray(remainingProvides));
+        return module.depends.every(notInArray(remainingProvides));
       });
 
     // remove from remaining list
@@ -151,16 +164,15 @@ const sortModules = modules => {
 
   // determine any required dependency not met by the provided dependencies
   const unmetDependencies = sortedModules
-    .reduce((reduced, module) => reduced.concat(module.requires), [])
+    .reduce((reduced, module) => reduced.concat(module.depends), [])
     .filter(firstOccurrence)
     .filter(requirement => !(requirement in modulesByProvides));
 
   return {sortedModules, unmetDependencies};
 };
 
-const censorState = (module, state) =>
-  [].concat(module.requires).concat(module.provides)
-    .reduce((reduced, key) => ({...reduced, [key]: state[key]}), {});
+const censorState = (fieldList, state) =>
+  Object.freeze(fieldList.reduce((reduced, k) => ({...reduced, [k]: state[k]}), {}));
 
 const createGraphReducer = (sortedModules, stateCodec) => {
   if (!sortedModules.length) {
@@ -174,12 +186,10 @@ const createGraphReducer = (sortedModules, stateCodec) => {
       const plainPrevState = decodeState(state);
       const plainNextState = sortedModules
         .reduce((reduced, module) => {
-          const censoredState = ENV_PRODUCTION ?
-            reduced :
-            Object.freeze(censorState(module, reduced));
+          const censoredState = ENV_PRODUCTION ? reduced : censorState(module.depends, reduced);
           return {
             ...reduced,
-            [module.provides]: module.reducer(censoredState, action)
+            [module.provides]: module.reducer(reduced[module.provides], action, censoredState)
           };
         }, plainPrevState);
       return encodeState(state, plainNextState);
@@ -244,7 +254,7 @@ const modularReducerFactory = (modules = []) => {
                 must provide ${missingExterns.join(', ')}`);
             }
           }
-console.log('~~~REDUCING~~~~');
+
           // run the modules
           return graphReducer(baseState, action);
         }
@@ -257,7 +267,9 @@ console.log('~~~REDUCING~~~~');
   };
 };
 
+
 export const modularReducer = modularReducerFactory();
+
 
 export const modularEnhancer = stateCodec => {
   const wrapReducer = modularReducer(stateCodec);
@@ -285,4 +297,52 @@ export const modularEnhancer = stateCodec => {
         }), {})
     };
   };
+};
+
+
+export const GetModule = (WrappedComponent, module) => {
+  const GetModuleWrappedComponent = React.createClass({
+    propTypes: {
+      ...WrappedComponent.propTypes,
+    },
+
+    contextTypes: {
+      store: storeShape
+    },
+
+    childContextTypes: {
+      store: storeShape
+    },
+
+    getChildContext() {
+      return {
+        store: this.module
+      }
+    },
+
+    componentWillMount() {
+      const {store} = this.context;
+      const hasModule = store.getModule('todos');
+      if (!hasModule) {
+        console.log('!!!!CREATE!!!!');
+        store.addModule('todos', module);
+        this.module = store;
+      } else {
+        console.log('!!!!CREATE (unnecessary)!!!!')
+      }
+    },
+
+    toString() {
+      return `GetModule(${WrappedComponent})`;
+    },
+
+    render() {
+      return React.createElement(WrappedComponent, this.props);
+    }
+  });
+
+  GetModuleWrappedComponent.toString = () =>
+    `GetModule(${WrappedComponent})`;
+
+  return GetModuleWrappedComponent;
 };

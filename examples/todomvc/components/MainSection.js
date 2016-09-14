@@ -1,6 +1,4 @@
 import React, {Component, PropTypes} from 'react';
-import todos from '../reducers/todos';
-import storeShape from 'react-redux/lib/utils/storeShape';
 import TodoItem from './TodoItem';
 import Footer from './Footer';
 import {SHOW_ALL, SHOW_MARKED, SHOW_UNMARKED} from '../constants/TodoFilters';
@@ -13,30 +11,17 @@ const TODO_FILTERS = {
 
 export default class MainSection extends Component {
   static propTypes = {
-    todos: PropTypes.array,
+    todos: PropTypes.array.isRequired,
     actions: PropTypes.object.isRequired
-  };
-
-  static contextTypes = {
-    store: storeShape
   };
 
   constructor(props, context) {
     super(props, context);
-    const hasModule = context.store.getModule('todos');
-    if (!hasModule) {
-console.log('!!!!CREATE!!!!!')
-      context.store.addModule('todos', () => ({
-        provides: 'todos',
-        requires: [],
-        reducer: todos
-      }));
-    }
     this.state = {filter: SHOW_ALL};
   }
 
   handleClearMarked() {
-    const atLeastOneMarked = (this.props.todos || []).some(todo => todo.marked);
+    const atLeastOneMarked = this.props.todos.some(todo => todo.marked);
     if (atLeastOneMarked) {
       this.props.actions.clearMarked();
     }
@@ -50,8 +35,8 @@ console.log('!!!!CREATE!!!!!')
     const {todos, actions} = this.props;
     const {filter} = this.state;
 
-    const filteredTodos = (todos || []).filter(TODO_FILTERS[filter]);
-    const markedCount = (todos || []).reduce((count, todo) =>
+    const filteredTodos = todos.filter(TODO_FILTERS[filter]);
+    const markedCount = todos.reduce((count, todo) =>
         todo.marked ? count + 1 : count,
       0
     );
@@ -71,7 +56,7 @@ console.log('!!!!CREATE!!!!!')
 
   renderToggleAll(markedCount) {
     const {todos, actions} = this.props;
-    if (todos && todos.length > 0) {
+    if (todos.length > 0) {
       return (
         <input className='toggle-all'
           type='checkbox'
@@ -84,9 +69,9 @@ console.log('!!!!CREATE!!!!!')
   renderFooter(markedCount) {
     const {todos} = this.props;
     const {filter} = this.state;
-    const unmarkedCount = todos ? (todos.length - markedCount) : 0;
+    const unmarkedCount = todos.length - markedCount;
 
-    if (todos && todos.length) {
+    if (todos.length) {
       return (
         <Footer markedCount={markedCount}
           unmarkedCount={unmarkedCount}

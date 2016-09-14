@@ -5,6 +5,9 @@ import Header from '../components/Header';
 import MainSection from '../components/MainSection';
 import * as TodoActions from '../actions/TodoActions';
 
+import todos from '../reducers/todos';
+import {GetModule} from '../modular';
+
 class TodoApp extends Component {
   render() {
     const { todos, actions } = this.props;
@@ -30,4 +33,11 @@ function mapDispatch(dispatch) {
   };
 }
 
-export default connect(mapState, mapDispatch)(TodoApp);
+export default GetModule(
+  connect(mapState, mapDispatch)(TodoApp),
+  () => ({
+    provides: 'todos',
+    depends: [],
+    reducer: todos
+  })
+);

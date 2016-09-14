@@ -3,10 +3,10 @@ import {persistState} from 'redux-devtools';
 import rootReducer from '../reducers';
 import DevTools from '../containers/DevTools';
 import {install} from 'redux-loop';
-import {modularEnhancer} from '../modular';
+import {modularEnhancer, loopCodec} from '../modular';
 
 const enhancer = compose(
-  modularEnhancer(),
+  modularEnhancer(loopCodec),
   install(),
   DevTools.instrument(),
   persistState(

@@ -8,9 +8,8 @@ const initialState = [{
   id: 0
 }];
 
-export default function todos(deps = {}, action) {
-  const state = deps.todos || initialState;
-console.log('REDUCER', state, action.type);
+export default function todos(state = initialState, action, deps) {
+console.log('REDUCER', state, deps, action.type);
   switch (action.type) {
   case ADD_TODO:
     return [{
@@ -40,7 +39,7 @@ console.log('REDUCER', state, action.type);
       ),
       Effects.call((...args) => {
         console.log('side-effect MARK_TODO', ...args);
-        return { type: '@@NOOP' };
+        return { type: '!!NOOP!!' };
       })
     );
 
