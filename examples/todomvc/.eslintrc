@@ -1,0 +1,15 @@
+{
+  "extends": "airbnb",
+  "rules": {
+    "comma-dangle": "off",
+    "padded-blocks": "off",
+    "no-nested-ternary": "off",
+    "brace-style": ["error", "stroustrup"],
+    "no-else-return": "off"
+  },
+  "parserOptions": {
+    "ecmaFeatures": {
+      "experimentalObjectRestSpread": true
+    }
+  }
+}

@@ -1,8 +1,9 @@
-import {createStore, compose} from 'redux';
-import {persistState} from 'redux-devtools';
+import { createStore, compose } from 'redux';
+import { install } from 'redux-loop';
+
+import { persistState } from 'redux-devtools';
 import DevTools from '../containers/DevTools';
-import {install} from 'redux-loop';
-import {modularEnhancer, loopCodec} from '../modular';
+import { modularEnhancer, loopCodec } from '../modular';
 
 const enhancer = compose(
   modularEnhancer(loopCodec),

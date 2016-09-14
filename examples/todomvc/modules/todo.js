@@ -1,4 +1,4 @@
-import {Effects, loop} from 'redux-loop';
+import { Effects, loop } from 'redux-loop';
 
 export const ADD_TODO = Symbol('ADD_TODO');
 export const DELETE_TODO = Symbol('DELETE_TODO');
@@ -72,20 +72,20 @@ export const reducer = (state = initialState, action, deps) => {
     case EDIT_TODO:
       return state.map(todo =>
         todo.id === action.id ?
-        {...todo, text: action.text} :
+        { ...todo, text: action.text } :
           todo
       );
 
     case MARK_TODO:
       return loop(
-        state.map(todo =>
+        state.map(todo => (
           todo.id === action.id ?
-          {...todo, marked: !todo.marked} :
+          { ...todo, marked: !todo.marked } :
             todo
-        ),
+        )),
         Effects.call((...args) => {
           console.log('side-effect MARK_TODO', ...args);
-          return {type: '!!NOOP!!'};
+          return { type: '!!NOOP!!' };
         })
       );
 
