@@ -91,19 +91,16 @@ const validateModule = module => {
 
   // validate the resultant
   if (typeof module !== 'object') {
-    throw new Error(`Invalid Module: Factory for module ${key} must return object`);
+    throw new Error(`Invalid Module: Expected object`);
   }
   if (!isStringOrSymbol(module.provides)) {
-    throw new Error(`Invalid Module: Factory for module ${key} must yield 
-      {provides:String|Symbol}`);
+    throw new Error(`Invalid Module: Expected {provides:String|Symbol}`);
   }
-  if (!isArrayOfStringOrSymbol(module.depends)) {
-    throw new Error(`Invalid Module: Factory for module ${key} must yield 
-      {depends:Array.<String|Symbol>}`);
+  if (('depends' in module) && !isArrayOfStringOrSymbol(module.depends)) {
+    throw new Error(`Invalid Module: Expected {depends:Array.<String|Symbol>}`);
   }
   if (typeof module.reducer !== 'function') {
-    throw new Error(`Invalid Module: Factory for module ${key} must yield 
-      {reducer:Function}`);
+    throw new Error(`Invalid Module: Expected {reducer:Function}`);
   }
 
   return module;
@@ -127,7 +124,7 @@ const sortModules = modules => {
     pendingProvides = remainingProvides
       .filter(provide => {
         const module = modulesByProvides[provide];
-        return module.depends.every(notInArray(remainingProvides));
+        return !module.depends || module.depends.every(notInArray(remainingProvides));
       });
 
     // remove from remaining list
@@ -150,7 +147,7 @@ const sortModules = modules => {
 
   // determine any required dependency not met by the provided dependencies
   const unmetDependencies = sortedModules
-    .reduce((reduced, module) => reduced.concat(module.depends), [])
+    .reduce((reduced, module) => reduced.concat(module.depends || []), [])
     .filter(firstOccurrence)
     .filter(requirement => !(requirement in modulesByProvides));
 
@@ -172,7 +169,10 @@ const createGraphReducer = (sortedModules, stateCodec) => {
       const plainPrevState = decodeState(state);
       const plainNextState = sortedModules
         .reduce((reduced, module) => {
-          const censoredState = ENV_PRODUCTION ? reduced : censorState(module.depends, reduced);
+          const censoredState =
+            !module.depends ? undefined :
+              ENV_PRODUCTION ? reduced :
+                censorState(module.depends, reduced);
           return {
             ...reduced,
             [module.provides]: module.reducer(reduced[module.provides], action, censoredState)

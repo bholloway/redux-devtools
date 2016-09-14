@@ -11,32 +11,32 @@ export const provides = 'todos';
 
 export const depends = [];
 
-export const addTodo = (text) => ({
+const addTodo = (text) => ({
   type: ADD_TODO,
   text
 });
 
-export const deleteTodo = (id) => ({
+const deleteTodo = (id) => ({
   type: DELETE_TODO,
   id
 });
 
-export const editTodo = (id, text) => ({
+const editTodo = (id, text) => ({
   type: EDIT_TODO,
   id,
   text
 });
 
-export const markTodo = id => ({
+const markTodo = id => ({
   type: MARK_TODO,
   id
 });
 
-export const markAll = () => ({
+const markAll = () => ({
   type: MARK_ALL
 });
 
-export const clearMarked = () => ({
+const clearMarked = () => ({
   type: CLEAR_MARKED
 });
 
