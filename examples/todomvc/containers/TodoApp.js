@@ -1,16 +1,15 @@
-import React, { Component } from 'react';
-import { connect } from 'react-redux';
-import { bindActionCreators } from 'redux';
+import React, {Component} from 'react';
+import {connect} from 'react-redux';
+import {bindActionCreators} from 'redux';
 import Header from '../components/Header';
 import MainSection from '../components/MainSection';
-import * as TodoActions from '../actions/TodoActions';
 
-import todos from '../reducers/todos';
-import {GetModule} from '../modular';
+import * as todoModule from '../modules/todo';
+import {Module} from '../modular';
 
 class TodoApp extends Component {
   render() {
-    const { todos, actions } = this.props;
+    const {todos, actions} = this.props;
 
     return (
       <div>
@@ -29,15 +28,11 @@ function mapState(state) {
 
 function mapDispatch(dispatch) {
   return {
-    actions: bindActionCreators(TodoActions, dispatch)
+    actions: bindActionCreators(todoModule.actions, dispatch)
   };
 }
 
-export default GetModule(
+export default Module(
   connect(mapState, mapDispatch)(TodoApp),
-  () => ({
-    provides: 'todos',
-    depends: [],
-    reducer: todos
-  })
+  todoModule
 );

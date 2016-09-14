@@ -87,40 +87,26 @@ const isStringOrSymbol = value =>
 const isArrayOfStringOrSymbol = value =>
   (Array.isArray(value) && value.every(isStringOrSymbol));
 
-const invokeModuleFactory = fn => key => {
-  let result;
-
-  // expect function
-  if (typeof fn !== 'function') {
-    throw new Error(`Implementation of module ${key} must be a factory function`);
-  }
-
-  // invoke function
-  try {
-    result = fn(key);
-  } catch (error) {
-    error.message = `Error invoking factory function for key ${key}\n${error.message}`;
-    throw error;
-  }
+const validateModule = module => {
 
   // validate the resultant
-  if (typeof result !== 'object') {
+  if (typeof module !== 'object') {
     throw new Error(`Invalid Module: Factory for module ${key} must return object`);
   }
-  if (!isStringOrSymbol(result.provides)) {
+  if (!isStringOrSymbol(module.provides)) {
     throw new Error(`Invalid Module: Factory for module ${key} must yield 
       {provides:String|Symbol}`);
   }
-  if (!isArrayOfStringOrSymbol(result.depends)) {
+  if (!isArrayOfStringOrSymbol(module.depends)) {
     throw new Error(`Invalid Module: Factory for module ${key} must yield 
       {depends:Array.<String|Symbol>}`);
   }
-  if (typeof result.reducer !== 'function') {
+  if (typeof module.reducer !== 'function') {
     throw new Error(`Invalid Module: Factory for module ${key} must yield 
       {reducer:Function}`);
   }
 
-  return result;
+  return module;
 };
 
 const sortModules = modules => {
@@ -227,7 +213,7 @@ const modularReducerFactory = (modules = []) => {
         addModule(key, definition) {
           const isDegenerate = !!self.getModule(key);
           return isDegenerate ? self : withModules(modules.concat({
-            ...(ENV_PRODUCTION ? definition : invokeModuleFactory(definition))(key),
+            ...(ENV_PRODUCTION ? definition : validateModule(definition)),
             key,
             definition
           }));
@@ -267,9 +253,7 @@ const modularReducerFactory = (modules = []) => {
   };
 };
 
-
 export const modularReducer = modularReducerFactory();
-
 
 export const modularEnhancer = stateCodec => {
   const wrapReducer = modularReducer(stateCodec);
@@ -300,7 +284,7 @@ export const modularEnhancer = stateCodec => {
 };
 
 
-export const GetModule = (WrappedComponent, module) => {
+export const Module = (WrappedComponent, module) => {
   const GetModuleWrappedComponent = React.createClass({
     propTypes: {
       ...WrappedComponent.propTypes,
@@ -322,10 +306,10 @@ export const GetModule = (WrappedComponent, module) => {
 
     componentWillMount() {
       const {store} = this.context;
-      const hasModule = store.getModule('todos');
+      const hasModule = store.getModule(module.provides);
       if (!hasModule) {
         console.log('!!!!CREATE!!!!');
-        store.addModule('todos', module);
+        store.addModule(module.provides, module);
         this.module = store;
       } else {
         console.log('!!!!CREATE (unnecessary)!!!!')
@@ -333,7 +317,7 @@ export const GetModule = (WrappedComponent, module) => {
     },
 
     toString() {
-      return `GetModule(${WrappedComponent})`;
+      return `Module(${WrappedComponent})`;
     },
 
     render() {
@@ -342,7 +326,7 @@ export const GetModule = (WrappedComponent, module) => {
   });
 
   GetModuleWrappedComponent.toString = () =>
-    `GetModule(${WrappedComponent})`;
+    `Module(${WrappedComponent})`;
 
   return GetModuleWrappedComponent;
 };

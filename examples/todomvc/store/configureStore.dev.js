@@ -1,6 +1,5 @@
 import {createStore, compose} from 'redux';
 import {persistState} from 'redux-devtools';
-import rootReducer from '../reducers';
 import DevTools from '../containers/DevTools';
 import {install} from 'redux-loop';
 import {modularEnhancer, loopCodec} from '../modular';
@@ -19,11 +18,12 @@ const enhancer = compose(
 export default function configureStore(initialState) {
   const store = createStore((state = {}) => state, initialState, enhancer);
 
-  if (module.hot) {
-    module.hot.accept('../reducers', () =>
-      store.replaceReducer(require('../reducers').default)
-    );
-  }
+//  if (module.hot) {
+//    module.hot.accept('../modules', () => {
+//      console.log('!!!HOT MODULE REPLACEMENT!!!');
+//      // TODO hot module replacement
+//    });
+//  }
 
   return store;
 }
