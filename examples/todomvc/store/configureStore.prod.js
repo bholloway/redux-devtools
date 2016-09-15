@@ -1,4 +1,5 @@
 import {createStore, compose} from 'redux';
+import 'core-js';
 import {install} from 'redux-loop';
 import {modularEnhancer, loopCodec} from '../modular';
 
@@ -8,5 +9,5 @@ const enhancer = compose(
 );
 
 export default function configureStore(initialState) {
-  return createStore(rootReducer, initialState, enhancer);
+  return createStore((state = {}) => state, initialState, enhancer);
 }

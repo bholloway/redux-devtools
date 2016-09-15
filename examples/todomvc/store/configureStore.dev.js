@@ -1,19 +1,15 @@
 import { createStore, compose } from 'redux';
+import 'core-js';
 import { install } from 'redux-loop';
 
-import { persistState } from 'redux-devtools';
-import DevTools from '../containers/DevTools';
 import { modularEnhancer, loopCodec } from '../modular';
 
 const enhancer = compose(
-  modularEnhancer(loopCodec),
-  install(),
-  DevTools.instrument(),
-  persistState(
-    window.location.href.match(
-      /[?&]debug_session=([^&#]+)\b/
-    )
-  )
+  ...[
+    modularEnhancer(loopCodec),
+    install(),
+    window.devToolsExtension && window.devToolsExtension()
+  ].filter(Boolean)
 );
 
 export default function configureStore(initialState) {

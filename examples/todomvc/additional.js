@@ -1,4 +1,5 @@
 import {compose} from 'redux';
+import 'core-js';
 import {install} from 'redux-loop';
 
 export const EXTERNAL_STORE_CHANGE = Symbol('EXTERNAL_STORE_CHANGE');

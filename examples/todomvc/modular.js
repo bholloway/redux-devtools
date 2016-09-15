@@ -135,13 +135,13 @@ const getShapeAssert = (prefix, specification) =>
  * @returns {{sortedModules: Array, externalDependencies: Array.<string>}}
  */
 const sortModules = (modulesByKey) => {
-  const remainingKeys = Array.from(modulesByKey.keys());
+  const remainingKeys = keys(modulesByKey);
   const sortedKeys = [];
   let pendingKeys;
   do {
     // find a list of modules that don't depend on any others in the remaining list
     pendingKeys = remainingKeys
-      .filter(key => modulesByKey.get(key).depends.every(notInArray(remainingKeys, key)));
+      .filter(key => modulesByKey[key].depends.every(notInArray(remainingKeys, key)));
 
     // remove from remaining list
     pendingKeys
@@ -159,13 +159,13 @@ const sortModules = (modulesByKey) => {
 
   // final sorted list of modules
   const sortedModules = sortedKeys
-    .map(key => modulesByKey.get(key));
+    .map(key => modulesByKey[key]);
 
   // determine any dependency not met by the modules themselves
   const externalDependencies = sortedModules
     .reduce((reduced, module) => reduced.concat(module.depends), [])
     .filter(firstOccurrence)
-    .filter(dependency => !modulesByKey.has(dependency));
+    .filter(dependency => !(dependency in modulesByKey));
 
   return { sortedModules, externalDependencies };
 };
@@ -187,7 +187,7 @@ const pickStateAndApiFromModules = modulesByKey =>
    */
   ((inherits, keyList, inheritedDeps, currentState) =>
     keyList.reduce((reduced, key) => {
-      const current = { ...modulesByKey.get(key).api, state: currentState[key] };
+      const current = { ...modulesByKey[key].api, state: currentState[key] };
       const inherited = inheritedDeps[key];
       const useCurrent = (key !== inherits) && ((key in currentState) || !(key in inheritedDeps));
       const final = useCurrent ? current : inherited;
@@ -227,7 +227,7 @@ const modularFactory = (store, stateCodec) => {
 
     // hash modules by their key
     const modulesByKey = modules
-      .reduce((reduced, module) => reduced.set(module.key, module), new Map());
+      .reduce((reduced, module) => ({ ...reduced, [module.key]: module }), {});
 
     // mix state and api for dependencies
     const pickStateAndApi = pickStateAndApiFromModules(modulesByKey);
