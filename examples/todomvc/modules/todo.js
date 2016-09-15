@@ -7,16 +7,17 @@ export const MARK_TODO = Symbol('MARK_TODO');
 export const MARK_ALL = Symbol('MARK_ALL');
 export const CLEAR_MARKED = Symbol('CLEAR_MARKED');
 
-export const provides = 'todos';
+export const provides = Symbol('todos');
 
-export const depends = [];
+export const depends = [provides];
 
-const addTodo = (text) => ({
+const addTodo = text => ({
   type: ADD_TODO,
+  routing: true,
   text
 });
 
-const deleteTodo = (id) => ({
+const deleteTodo = id => ({
   type: DELETE_TODO,
   id
 });
@@ -40,7 +41,11 @@ const clearMarked = () => ({
   type: CLEAR_MARKED
 });
 
-export const actions = {
+const foo = () => ({
+  type: 'foo'
+});
+
+export const api = {
   addTodo,
   deleteTodo,
   editTodo,
@@ -83,10 +88,7 @@ export const reducer = (state = initialState, action, deps) => {
           { ...todo, marked: !todo.marked } :
             todo
         )),
-        Effects.call((...args) => {
-          console.log('side-effect MARK_TODO', ...args);
-          return { type: '!!NOOP!!' };
-        })
+        Effects.call(() => foo())
       );
 
     case MARK_ALL:

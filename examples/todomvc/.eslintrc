@@ -4,7 +4,7 @@
     "comma-dangle": "off",
     "padded-blocks": "off",
     "no-nested-ternary": "off",
-    "brace-style": ["error", "stroustrup"],
+    "brace-style": "off",
     "no-else-return": "off"
   },
   "parserOptions": {

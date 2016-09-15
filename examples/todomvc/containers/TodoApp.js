@@ -28,11 +28,8 @@ function mapState(state) {
 
 function mapDispatch(dispatch) {
   return {
-    actions: bindActionCreators(todoModule.actions, dispatch)
+    actions: bindActionCreators(todoModule.api, dispatch)
   };
 }
 
-export default Module(
-  connect(mapState, mapDispatch)(TodoApp),
-  todoModule
-);
+export default Module(todoModule)(connect(mapState, mapDispatch)(TodoApp));

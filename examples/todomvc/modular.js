@@ -1,7 +1,18 @@
 import React from 'react';
+import PropTypes from 'prop-types';
 import { loop, isLoop, getEffect, getModel } from 'redux-loop/lib/loop';
 import { batch, none } from 'redux-loop/lib/effects';
 import storeShape from 'react-redux/lib/utils/storeShape';
+
+PropTypes.symbol = (props, propName) => {
+  const value = props[propName];
+  const isValid = (typeof value === 'symbol') || /^Symbol\(.*\)$/.test(String(value));
+  return isValid ? null : new Error(`Invalid ${propName} of type ${typeof value}, expected symbol`);
+};
+
+const keys = object => []
+  .concat(Object.getOwnPropertyNames(object))
+  .concat(Object.getOwnPropertySymbols(object));
 
 export const optimizeBatch = (effects) => {
   switch (effects.length) {
@@ -17,13 +28,13 @@ export const optimizeBatch = (effects) => {
 export const imLoopCodec = {
   decode: state => state,
   encode: (state, value) => {
-    const effects = Object.keys(value)
+    const effects = keys(value)
       .reduce((reduced, k) => {
         const v = value[k];
         return reduced.concat(isLoop(v) ? getEffect(v) : []);
       }, []);
 
-    const plain = Object.keys(value)
+    const plain = keys(value)
       .reduce((reduced, k) => {
         const v = value[k];
         return {
@@ -42,13 +53,13 @@ export const imLoopCodec = {
 export const loopCodec = {
   decode: state => state,
   encode: (state, value) => {
-    const effects = Object.keys(value)
+    const effects = keys(value)
       .reduce((reduced, k) => {
         const v = value[k];
         return reduced.concat(isLoop(v) ? getEffect(v) : []);
       }, []);
 
-    const plain = Object.keys(value)
+    const plain = keys(value)
       .reduce((reduced, k) => {
         const v = value[k];
         return {
@@ -68,135 +79,179 @@ export const loopCodec = {
 
 const ENV_PRODUCTION = (process.env.NODE_ENV === 'production');
 
-const ensureFunction = (object, field, defaultValue) => {
-  const isValid = !!object && (typeof object === 'object') && (typeof object[field] === 'function');
-  return isValid ? object[field] : defaultValue;
+const getFnInObject = (object) => {
+  const isObject = !!object && (typeof object === 'object');
+  return (field, defaultValue) => {
+    const isValid = isObject && (typeof object[field] === 'function');
+    return isValid ? object[field] : defaultValue;
+  };
 };
 
 const passThrough = x => x;
 
-const notInArray = array => value =>
-  (array.indexOf(value) < 0);
+const noop = () => {};
+
+const notInArray = (array, ignored) => value =>
+  (([].concat(array).indexOf(value) < 0) || ([].concat(ignored).indexOf(value) >= 0));
 
 const firstOccurrence = (value, i, array) =>
   (array.indexOf(value) === i);
 
-const isStringOrSymbol = value =>
-  ((typeof value === 'string') || (typeof value === 'symbol'));
+const matchModule = candidate => module =>
+  ([module.key, module.definition].indexOf(candidate) >= 0);
 
-const isArrayOfStringOrSymbol = value =>
-  (Array.isArray(value) && value.every(isStringOrSymbol));
+/**
+ * Throw errors for candidate not matching the given specification.
+ *
+ * @param {string} [prefix] Optional prefix for errors
+ * @param {object} specification A hash of fields and their PropTypes
+ * @returns {function} A test method that throws where the candidate does meet specification
+ */
+const getShapeAssert = (prefix, specification) =>
+  /**
+   * Asserts that the given candidate is a valid module.
+   * @throws {Error} On invalid module
+   * @param {*} candidate A possible module
+   */
+  ((candidate) => {
+    try {
+      if (!candidate || (typeof candidate !== 'object')) {
+        throw new Error('expected object');
+      } else {
+        PropTypes.validateWithErrors(specification, candidate);
+      }
+    } catch (error) {
+      const message = error.message.replace(' supplied to `<<anonymous>>`', '');
+      throw new Error(`${prefix || ''}${message}`);
+    }
+  });
 
-const isObject = value =>
-  (!!value && (typeof value === 'object'));
-
-const isFunction = value =>
-  (typeof value === 'function');
-
-const matchModule = definitionOrKey => module =>
-  ((module.key === definitionOrKey) || (module.definition === definitionOrKey));
-
-const assertModule = (candidate) => {
-  const prefix = `Invalid Module: ${candidate}:`;
-
-  // validate the resultant
-  if (!isObject(candidate)) {
-    throw new Error(`${prefix} Expected object saw ${typeof candidate}`);
-  }
-
-  // mandatory
-  if (!isFunction(candidate.reducer)) {
-    throw new Error(`${prefix} Expected {reducer:Function}`);
-  }
-
-  // optional
-  if (('provides' in candidate) && !isStringOrSymbol(candidate.provides)) {
-    throw new Error(`${prefix} Expected optional {provides:String|Symbol}`);
-  }
-  if (('depends' in candidate) && !isArrayOfStringOrSymbol(candidate.depends)) {
-    throw new Error(`${prefix} Expected optional {depends:Array.<String|Symbol>}`);
-  }
-  if (('api' in candidate) && !isObject(candidate.api)) {
-    throw new Error(`${prefix} Expected optional {api:Object}`);
-  }
-};
-
+/**
+ * Sort modules such that earlier modules satisfy the dependencies of later modules.
+ *
+ * Dependencies that are not provided by the given modules are considered to be external.
+ *
+ * @param {Map} modulesByKey A map of modules keyed by their 'provide' field
+ * @returns {{sortedModules: Array, externalDependencies: Array.<string>}}
+ */
 const sortModules = (modulesByKey) => {
-
-  // sort modules such that earlier modules satisfy the dependencies of later modules
-  const remainingProvides = Object.keys(modulesByKey);
-  const sortedProvides = [];
-  let pendingProvides;
+  const remainingKeys = Array.from(modulesByKey.keys());
+  const sortedKeys = [];
+  let pendingKeys;
   do {
     // find a list of modules that don't depend on any others in the remaining list
-    pendingProvides = remainingProvides
-      .filter((provide) => {
-        const module = modulesByKey[provide];
-        return !module.depends || module.depends.every(notInArray(remainingProvides));
-      });
+    pendingKeys = remainingKeys
+      .filter(key => modulesByKey.get(key).depends.every(notInArray(remainingKeys, key)));
 
     // remove from remaining list
-    pendingProvides
-      .forEach(provide => remainingProvides.splice(remainingProvides.indexOf(provide), 1));
+    pendingKeys
+      .forEach(key => remainingKeys.splice(remainingKeys.indexOf(key), 1));
 
     // add to the sorted list
-    sortedProvides.push(...pendingProvides);
+    sortedKeys.push(...pendingKeys);
 
-  } while (pendingProvides.length);
+  } while (pendingKeys.length);
 
   // circular dependencies
-  if (remainingProvides.length) {
-    throw new Error(`Invalid Circular Dependency: ${remainingProvides.join(', ')}`);
+  if (remainingKeys.length) {
+    throw new Error(`Invalid Circular Dependency: ${remainingKeys.join(', ')}`);
   }
 
   // final sorted list of modules
-  const sortedModules = sortedProvides
-    .map(provide => modulesByKey[provide]);
+  const sortedModules = sortedKeys
+    .map(key => modulesByKey.get(key));
 
   // determine any dependency not met by the modules themselves
   const externalDependencies = sortedModules
     .reduce((reduced, module) => reduced.concat(module.depends), [])
     .filter(firstOccurrence)
-    .filter(requirement => !(requirement in modulesByKey));
+    .filter(dependency => !modulesByKey.has(dependency));
 
   return { sortedModules, externalDependencies };
 };
 
-const pickStateAndApiFromModules = modulesByKey => (inheritedDeps, state, keyList) =>
-  keyList.reduce((reduced, key) => ({
-    ...reduced,
-    [key]: (key in state) ? { ...modulesByKey[key].api, ...state[key] } : inheritedDeps[key]
-  }), {});
 
-const createModuleReducer = (modules, stateCodec) => {
-  const decodeState = ensureFunction(stateCodec, 'decode', passThrough);
-  const encodeState = ensureFunction(stateCodec, 'encode', passThrough);
+/**
+ * For a given hash of modules, create a method that will pick state and api for a set of keys.
+ *
+ * @param {Map} modulesByKey A map of modules keyed by their 'provide' field
+ * @returns {function} A pick function
+ */
+const pickStateAndApiFromModules = modulesByKey =>
+  /**
+   * A pick function
+   * @param {string} inherits A single key which should favor inherited dependencies only
+   * @param {Array.<string>} keyList A whitelist of keys which will be included
+   * @param {object} inheritedDeps A hash of inherited dependencies that may be reused
+   * @param {object} currentState The current state, without any API mixed in
+   */
+  ((inherits, keyList, inheritedDeps, currentState) =>
+    keyList.reduce((reduced, key) => {
+      const current = { ...modulesByKey.get(key).api, state: currentState[key] };
+      const inherited = inheritedDeps[key];
+      const useCurrent = (key !== inherits) && ((key in currentState) || !(key in inheritedDeps));
+      const final = useCurrent ? current : inherited;
+      return { ...reduced, [key]: final };
+    }, {}));
 
-  // hash modules by their key
-  const modulesByKey = modules
-    .reduce((reduced, module) => ({
-      ...reduced,
-      [module.key]: module
-    }), {});
 
-  // mix state and api for dependencies
-  const pickStateAndApi = pickStateAndApiFromModules(modulesByKey);
+/**
+ * Create a pseudo-store that allows 'ducks' modules to be added to and removed from the reducer.
+ *
+ * @param {{replaceReducer:function, subscribe:function, dispatch:function, getState:function}}
+ *  store A redux store
+ * @param {{decode:function, encode:function, [get:function]}} [stateCodec] Optional methods that
+ *  decode state to plain objects and encode a plain object to state
+ * @returns {reducer:function, pseudoStore:{replaceReducer:function, subscribe:function,
+ *  dispatch:function, getState:function, getModule:function, addModule:function,
+ *  removeModule:function}}
+ */
+const modularFactory = (store, stateCodec) => {
 
-  // sort modules such that earlier modules satisfy the dependencies of later modules
-  const { sortedModules, externalDependencies } = sortModules(modulesByKey);
+  // determine codecs
+  const getCodecFn = getFnInObject(stateCodec);
+  const decodeState = getCodecFn('decode', passThrough);
+  const encodeState = getCodecFn('encode', passThrough);
+  const pickState = getCodecFn('get', (state, k) => decodeState(state)[k]);
 
-  // optimise the degenerate case
-  if (!sortedModules.length) {
-    return {
-      externalDependencies,
-      moduleReducer: passThrough
-    };
-  }
-  // with any modules we need to transcode state before and after
-  else {
-    return {
-      externalDependencies,
-      moduleReducer: (state, action, inheritedDeps = {}) => {
+  // get a validator for module shape but short circuit validation for production
+  const assertModule = (ENV_PRODUCTION) ? noop : getShapeAssert('Invalid Module: ', {
+    reducer: PropTypes.func.isRequired,
+    provides: PropTypes.oneOfType([PropTypes.string, PropTypes.symbol]),
+    depends: PropTypes.arrayOf(PropTypes.oneOfType([PropTypes.string, PropTypes.symbol])),
+    api: PropTypes.objectOf(PropTypes.func)
+  });
+
+  // curry the reducer factory
+  const getModuleReducer = (modules) => {
+
+    // hash modules by their key
+    const modulesByKey = modules
+      .reduce((reduced, module) => reduced.set(module.key, module), new Map());
+
+    // mix state and api for dependencies
+    const pickStateAndApi = pickStateAndApiFromModules(modulesByKey);
+
+    // sort modules such that earlier modules satisfy the dependencies of later modules
+    const { sortedModules, externalDependencies } = sortModules(modulesByKey);
+
+    // optimise the degenerate case
+    if (!sortedModules.length) {
+      return {
+        externalDependencies,
+        moduleReducer: passThrough
+      };
+    }
+    // with any modules we need to transcode state before and after
+    else {
+      const moduleReducer = (state, action, inheritedDeps = {}) => {
+
+        // optimisations require us to track whether any reducers were actually called
+        let hasReduced = false;
+
+        // routing is supported
+        const [routeTip, ...routeRest] =
+          Array.isArray(action.routing) ? action.routing.slice() : [];
 
         // convert native state to plain state
         const plainPrevState = decodeState(state);
@@ -205,38 +260,53 @@ const createModuleReducer = (modules, stateCodec) => {
         const plainNextState = sortedModules
           .reduce((reduced, module) => {
             const { key, depends, reducer } = module;
-            const partialNewState = reducer(
-              reduced[key],
-              action,
-              pickStateAndApi(inheritedDeps, reduced, depends)
-            );
-            return {
-              ...reduced,
-              [key]: partialNewState
-            };
+
+            // reduce only where something to the left has reduced or where routing dictates
+            const doReduce = hasReduced || !routeTip || (key === routeTip);
+            if (doReduce) {
+              hasReduced = true;
+
+              // run the reducer
+              const partialNewState = reducer(
+                reduced[key],
+                { ...action, routing: routeRest },
+                pickStateAndApi(key, depends, inheritedDeps, reduced)
+              );
+
+              // merge the result
+              return {
+                ...reduced,
+                [key]: partialNewState
+              };
+            }
+            // skipped
+            else {
+              return reduced;
+            }
           }, plainPrevState);
 
         // convert plain state to native state
-        return encodeState(state, plainNextState);
-      }
-    };
-  }
-};
+        return hasReduced ? encodeState(state, plainNextState) : state;
+      };
 
-const modularFactory = (store, stateCodec) => {
-  const decodeState = ensureFunction(stateCodec, 'decode', passThrough);
+      return { externalDependencies, moduleReducer };
+    }
+  };
 
-  const getPseudoStore = (initialReducer = passThrough, parent = store, path = []) => {
-    let baseReducer = initialReducer;
+  const getPseudoStore = (initialReducer = passThrough, recursive) => {
+
+    // internal state
     const modules = [];
+    let baseReducer = initialReducer;
     let cache;
+    let isDestroying;
 
     const validate = () => {
-      cache = cache || createModuleReducer(modules, stateCodec);
+      cache = cache || getModuleReducer(modules);
       return cache;
     };
 
-    const reducer = (state, action, inheritedDeps = {}) => {
+    const combinedReducer = (state, action, inheritedDeps = {}) => {
       const { moduleReducer, externalDependencies } = validate();
 
       // run the base reducer (where present)
@@ -258,7 +328,13 @@ const modularFactory = (store, stateCodec) => {
     };
 
     const invalidateReducer = () => {
-      parent.replaceReducer(reducer);
+      if (!isDestroying) {
+        if (recursive) {
+          recursive.invalidate();
+        } else {
+          store.replaceReducer(combinedReducer);
+        }
+      }
     };
 
     const invalidateModules = () => {
@@ -266,96 +342,136 @@ const modularFactory = (store, stateCodec) => {
       invalidateReducer();
     };
 
-    const self = {
-      replaceReducer: (candidate) => {
-        const validated = (typeof candidate === 'function') ? candidate : undefined;
-        if (baseReducer !== validated) {
-          baseReducer = validated;
-          invalidateReducer();
-        }
-      },
-
-      subscribe(handler) {
-        return store.subscribe(handler);
-      },
-
-      dispatch(event) {
-        // TODO routing
-        return store.dispatch(event);
-      },
-
-      getState() {
-        // TODO support deep paths
-        const object = decodeState(store.getState());
-        return path.length ? object[path[0]] : object;
-      },
-
-      getModule: definitionOrKey =>
-        modules.find(matchModule(definitionOrKey)),
-
-      addModule: (definition) => {
-        const existing = self.getModule(definition);
-
-        // return any existing module
-        if (existing) {
-          return existing;
-        }
-        // otherwise create a module
-        else {
-          // check the module in development
-          if (!ENV_PRODUCTION) {
-            assertModule(definition);
-          }
-
-          // key needs to be specified now to tie the pseudoStore to the module
-          const key = definition.provides || Symbol('private-module');
-
-          // the module api is like a sub-store
-          const { reducer: childReducer, pseudoStore } = getPseudoStore(
-            definition.reducer,
-            self,
-            path.concat(key)
-          );
-
-          // the modules list contains private information in addition to the definition
-          modules.push({
-            key,
-            definition,
-            depends: definition.depends || [],
-            api: definition.api || {},
-            reducer: childReducer
-          });
-          invalidateModules();
-
-          return pseudoStore;
-        }
-      },
-
-      removeModule: (definitionOrKey) => {
-        const index = modules.findIndex(matchModule(definitionOrKey));
-        if (index >= 0) {
-          modules.splice(index, 1);
-          invalidateModules();
-        }
+    const replaceReducer = (candidate) => {
+      const validated = (typeof candidate === 'function') ? candidate : undefined;
+      if (baseReducer !== validated) {
+        baseReducer = validated;
+        invalidateReducer();
       }
     };
 
-    return { reducer, pseudoStore: self };
+    const subscribe = store.subscribe;
+
+    const dispatch = (action) => {
+      if (recursive) {
+        const deeperPath = Array.isArray(action.routing) ? action.routing : [];
+        const routing = !!action.routing && [recursive.key, ...deeperPath];
+        return recursive.dispatch({ ...action, routing });
+      } else {
+        return store.dispatch(action);
+      }
+    };
+
+    const getState = () =>
+      (recursive ? pickState(recursive.getState(), recursive.key) : store.getState());
+
+    const createModule = (definition) => {
+
+      // check module
+      assertModule(definition);
+      const { reducer, provides, depends, api } = definition;
+
+      // key needs to be specified now to tie the pseudoStore to the module
+      const key = provides || Symbol('private-module');
+
+      // wrap the reducer in the same modular api
+      const child = getPseudoStore(reducer, {
+        key,
+        invalidate: invalidateReducer,
+        dispatch,
+        getState
+      });
+
+      // the modules list contains private information in addition to the definition
+      return {
+        key,
+        definition,
+        ...child,
+        depends: depends || [],
+        api: api || {}
+      };
+    };
+
+    const destroyModule = (module) => {
+      isDestroying = true;
+      module.pseudoStore.removeAllModules();
+      isDestroying = false;
+    };
+
+    const getModule = definitionOrKey =>
+      modules.find(matchModule(definitionOrKey));
+
+    const addModule = (definition) => {
+      const existing = getModule(definition);
+
+      // return any existing module
+      if (existing) {
+        return existing;
+      }
+      // otherwise create a module
+      else {
+        const module = createModule(definition);
+        modules.push(module);
+        invalidateModules();
+        return module.pseudoStore;
+      }
+    };
+
+    const removeModule = (definitionOrKey) => {
+      const index = modules.findIndex(matchModule(definitionOrKey));
+      if (index >= 0) {
+        destroyModule(modules.splice(index, 1).pop());
+        invalidateModules();
+      }
+    };
+
+    const removeAllModules = () => {
+      while (modules.length) {
+        destroyModule(modules.pop());
+      }
+      invalidateModules();
+    };
+
+    // ensure the reducer is installed in the store
+    invalidateReducer();
+
+    return {
+      reducer: combinedReducer,
+      pseudoStore: {
+        replaceReducer,
+        subscribe,
+        dispatch,
+        getState,
+        getModule,
+        addModule,
+        removeModule,
+        removeAllModules
+      }
+    };
   };
 
   return getPseudoStore;
 };
 
+
+/**
+ * Create a store enhancer for modular reducers.
+ *
+ * @param {{decode:function, encode:function, [get:function]}} [stateCodec] Optional methods that
+ *  decode state to plain objects and encode a plain object to state
+ * @returns {function} Redux store enhancer
+ */
 export const modularEnhancer = stateCodec => factory => (reducer, ...rest) => {
   const store = factory(passThrough, ...rest);
-  const { pseudoStore } = modularFactory(store, stateCodec)(reducer);
+  const modular = modularFactory(store, stateCodec)(reducer);
   return {
     ...store,
-    ...pseudoStore
+    ...modular.pseudoStore
   };
 };
 
-export const Module = (WrappedComponent, module) => {
+
+export const Module = module => (WrappedComponent) => {
   const GetModuleWrappedComponent = React.createClass({
     propTypes: {
       ...WrappedComponent.propTypes,
@@ -377,10 +493,7 @@ export const Module = (WrappedComponent, module) => {
 
     componentWillMount() {
       const { store } = this.context;
-      const hasModule = store.getModule(module.provides);
-      if (!hasModule) {
-        this.module = store.addModule(module);
-      }
+      this.module = store.getModule(module) || store.addModule(module);
     },
 
     toString() {
